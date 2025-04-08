@@ -33,13 +33,25 @@ class TaskListScreen extends StatefulWidget {
 
 class _TaskListScreenState extends State<TaskListScreen> {
   final TextEditingController _controller = TextEditingController();
-  final CollectionReference tasksRef = FirebaseFirestore.instance.collection(
-    'tasks',
-  );
+  late final CollectionReference tasksRef;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    tasksRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user!.uid)
+        .collection('tasks');
+  }
 
   Future<void> _addTask(String taskName) async {
     if (taskName.trim().isEmpty) return;
-    await tasksRef.add({'name': taskName.trim(), 'isCompleted': false});
+    await tasksRef.add({
+      'name': taskName.trim(),
+      'isCompleted': false,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
     _controller.clear();
   }
 
@@ -54,12 +66,21 @@ class _TaskListScreenState extends State<TaskListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Task Manager")),
+      appBar: AppBar(
+        title: const Text("Task Manager"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+            },
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Task input
             Row(
               children: [
                 Expanded(
@@ -79,14 +100,9 @@ class _TaskListScreenState extends State<TaskListScreen> {
               ],
             ),
             const SizedBox(height: 20),
-
-            // Task list from Firestore
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream:
-                    tasksRef
-                        .orderBy('timestamp', descending: false)
-                        .snapshots(),
+                stream: tasksRef.orderBy('timestamp').snapshots(),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
