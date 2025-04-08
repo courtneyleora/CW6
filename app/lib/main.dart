@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,4 +137,27 @@ class _TaskListScreenState extends State<TaskListScreen> {
       ),
     );
   }
+}
+
+class AuthService {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  Stream<User?> get userChanges => _auth.authStateChanges();
+
+  Future<void> signIn(String email, String password) async {
+    await _auth.signInWithEmailAndPassword(email: email, password: password);
+  }
+
+  Future<void> signOut() async {
+    await _auth.signOut();
+  }
+
+  Future<void> signUp(String email, String password) async {
+    await _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  User? get currentUser => _auth.currentUser;
 }
