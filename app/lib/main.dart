@@ -1,6 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-void main() => runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -12,170 +18,118 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: const TaskManager(),
+      home: const TaskListScreen(), // <-- set Firebase-based screen as home
     );
   }
 }
 
-class TaskManager extends StatefulWidget {
-  const TaskManager({super.key});
+class TaskListScreen extends StatefulWidget {
+  const TaskListScreen({super.key});
 
   @override
-  State<TaskManager> createState() => _TaskManagerState();
+  State<TaskListScreen> createState() => _TaskListScreenState();
 }
 
-class _TaskManagerState extends State<TaskManager> {
-  final TextEditingController _taskController = TextEditingController();
-  final TextEditingController _dayController = TextEditingController();
-  final TextEditingController _timeController = TextEditingController();
-  final TextEditingController _subTaskController = TextEditingController();
+class _TaskListScreenState extends State<TaskListScreen> {
+  final TextEditingController _controller = TextEditingController();
+  final CollectionReference tasksRef = FirebaseFirestore.instance.collection(
+    'tasks',
+  );
 
-  final Map<String, Map<String, List<Map<String, dynamic>>>> _taskMap = {};
-
-  void _addTask() {
-    final day = _dayController.text.trim();
-    final time = _timeController.text.trim();
-    final subTask = _subTaskController.text.trim();
-
-    if (day.isNotEmpty && time.isNotEmpty && subTask.isNotEmpty) {
-      setState(() {
-        _taskMap.putIfAbsent(day, () => {});
-        _taskMap[day]!.putIfAbsent(time, () => []);
-        _taskMap[day]![time]!.add({'name': subTask, 'completed': false});
-
-        // Clear input fields
-        _taskController.clear();
-        _dayController.clear();
-        _timeController.clear();
-        _subTaskController.clear();
-      });
-    }
+  Future<void> _addTask(String taskName) async {
+    if (taskName.trim().isEmpty) return;
+    await tasksRef.add({'name': taskName.trim(), 'isCompleted': false});
+    _controller.clear();
   }
 
-  void _toggleCompletion(String day, String time, int index) {
-    setState(() {
-      _taskMap[day]![time]![index]['completed'] =
-          !_taskMap[day]![time]![index]['completed'];
-    });
+  Future<void> _toggleComplete(String id, bool current) async {
+    await tasksRef.doc(id).update({'isCompleted': !current});
   }
 
-  void _deleteTask(String day, String time, int index) {
-    setState(() {
-      _taskMap[day]![time]!.removeAt(index);
-      if (_taskMap[day]![time]!.isEmpty) {
-        _taskMap[day]!.remove(time);
-        if (_taskMap[day]!.isEmpty) {
-          _taskMap.remove(day);
-        }
-      }
-    });
+  Future<void> _deleteTask(String id) async {
+    await tasksRef.doc(id).delete();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nested Task Manager')),
+      appBar: AppBar(title: const Text("Task Manager")),
       body: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Input fields
-            TextField(
-              controller: _dayController,
-              decoration: const InputDecoration(
-                labelText: 'Day (e.g., Monday)',
-              ),
+            // Task input
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: const InputDecoration(
+                      labelText: "Enter task name",
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: () => _addTask(_controller.text),
+                  child: const Text("Add"),
+                ),
+              ],
             ),
-            TextField(
-              controller: _timeController,
-              decoration: const InputDecoration(
-                labelText: 'Time Block (e.g., 9am - 10am)',
-              ),
-            ),
-            TextField(
-              controller: _subTaskController,
-              decoration: const InputDecoration(
-                labelText: 'Sub-task Name (e.g., HW1)',
-              ),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton(onPressed: _addTask, child: const Text('Add')),
             const SizedBox(height: 20),
 
-            // Task List
+            // Task list from Firestore
             Expanded(
-              child:
-                  _taskMap.isEmpty
-                      ? const Center(child: Text('No tasks yet.'))
-                      : ListView(
-                        children:
-                            _taskMap.entries.map((dayEntry) {
-                              final day = dayEntry.key;
-                              final timeBlocks = dayEntry.value;
+              child: StreamBuilder<QuerySnapshot>(
+                stream:
+                    tasksRef
+                        .orderBy('timestamp', descending: false)
+                        .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                              return ExpansionTile(
-                                title: Text(
-                                  day,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                                children:
-                                    timeBlocks.entries.map((timeEntry) {
-                                      final time = timeEntry.key;
-                                      final tasks = timeEntry.value;
+                  final tasks = snapshot.data!.docs;
 
-                                      return ExpansionTile(
-                                        title: Text(
-                                          time,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        children:
-                                            tasks.asMap().entries.map((entry) {
-                                              final index = entry.key;
-                                              final task = entry.value;
-                                              return ListTile(
-                                                leading: Checkbox(
-                                                  value: task['completed'],
-                                                  onChanged:
-                                                      (_) => _toggleCompletion(
-                                                        day,
-                                                        time,
-                                                        index,
-                                                      ),
-                                                ),
-                                                title: Text(
-                                                  task['name'],
-                                                  style: TextStyle(
-                                                    decoration:
-                                                        task['completed']
-                                                            ? TextDecoration
-                                                                .lineThrough
-                                                            : null,
-                                                  ),
-                                                ),
-                                                trailing: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.delete,
-                                                    color: Colors.red,
-                                                  ),
-                                                  onPressed:
-                                                      () => _deleteTask(
-                                                        day,
-                                                        time,
-                                                        index,
-                                                      ),
-                                                ),
-                                              );
-                                            }).toList(),
-                                      );
-                                    }).toList(),
-                              );
-                            }).toList(),
-                      ),
+                  if (tasks.isEmpty) {
+                    return const Center(child: Text("No tasks added yet."));
+                  }
+
+                  return ListView.builder(
+                    itemCount: tasks.length,
+                    itemBuilder: (context, index) {
+                      final task = tasks[index];
+                      final taskData = task.data() as Map<String, dynamic>;
+
+                      return ListTile(
+                        leading: Checkbox(
+                          value: taskData['isCompleted'],
+                          onChanged:
+                              (_) => _toggleComplete(
+                                task.id,
+                                taskData['isCompleted'],
+                              ),
+                        ),
+                        title: Text(
+                          taskData['name'],
+                          style: TextStyle(
+                            decoration:
+                                taskData['isCompleted']
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _deleteTask(task.id),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),
