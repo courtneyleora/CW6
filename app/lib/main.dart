@@ -24,6 +24,73 @@ class MyApp extends StatelessWidget {
   }
 }
 
+class LoginScreen extends StatefulWidget {
+  final VoidCallback onLoginSuccess;
+  const LoginScreen({super.key, required this.onLoginSuccess});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final AuthService _auth = AuthService();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  String error = '';
+
+  Future<void> _login() async {
+    try {
+      await _auth.signIn(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+      widget.onLoginSuccess();
+    } catch (e) {
+      setState(() => error = "Login failed: ${e.toString()}");
+    }
+  }
+
+  Future<void> _register() async {
+    try {
+      await _auth.signUp(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+      widget.onLoginSuccess();
+    } catch (e) {
+      setState(() => error = "Registration failed: ${e.toString()}");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Login / Register")),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _emailController,
+              decoration: const InputDecoration(labelText: "Email"),
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: const InputDecoration(labelText: "Password"),
+              obscureText: true,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _login, child: const Text("Login")),
+            TextButton(onPressed: _register, child: const Text("Register")),
+            if (error.isNotEmpty)
+              Text(error, style: const TextStyle(color: Colors.red)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
 
