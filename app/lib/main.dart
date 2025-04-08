@@ -3,12 +3,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+// Your entry point
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   runApp(const MyApp());
 }
 
+// Root widget
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -19,11 +21,35 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: const TaskListScreen(), // <-- set Firebase-based screen as home
+      home: const AuthGate(),
     );
   }
 }
 
+// Auth-based navigation
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return LoginScreen(
+            onLoginSuccess: () {
+              (context as Element).reassemble();
+            },
+          );
+        } else {
+          return const TaskListScreen();
+        }
+      },
+    );
+  }
+}
+
+// Login/Register UI
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
   const LoginScreen({super.key, required this.onLoginSuccess});
@@ -33,32 +59,31 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final AuthService _auth = AuthService();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  String error = '';
+  final TextEditingController _email = TextEditingController();
+  final TextEditingController _password = TextEditingController();
+  String _error = "";
 
   Future<void> _login() async {
     try {
-      await _auth.signIn(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _email.text.trim(),
+        password: _password.text.trim(),
       );
       widget.onLoginSuccess();
     } catch (e) {
-      setState(() => error = "Login failed: ${e.toString()}");
+      setState(() => _error = "Login failed: ${e.toString()}");
     }
   }
 
   Future<void> _register() async {
     try {
-      await _auth.signUp(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _email.text.trim(),
+        password: _password.text.trim(),
       );
       widget.onLoginSuccess();
     } catch (e) {
-      setState(() => error = "Registration failed: ${e.toString()}");
+      setState(() => _error = "Registration failed: ${e.toString()}");
     }
   }
 
@@ -67,23 +92,27 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text("Login / Register")),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             TextField(
-              controller: _emailController,
+              controller: _email,
               decoration: const InputDecoration(labelText: "Email"),
             ),
+            const SizedBox(height: 10),
             TextField(
-              controller: _passwordController,
+              controller: _password,
               decoration: const InputDecoration(labelText: "Password"),
               obscureText: true,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             ElevatedButton(onPressed: _login, child: const Text("Login")),
             TextButton(onPressed: _register, child: const Text("Register")),
-            if (error.isNotEmpty)
-              Text(error, style: const TextStyle(color: Colors.red)),
+            if (_error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(_error, style: const TextStyle(color: Colors.red)),
+              ),
           ],
         ),
       ),
@@ -91,6 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+// Task Manager Screen
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
 
@@ -105,10 +135,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
   @override
   void initState() {
     super.initState();
-    final user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseAuth.instance.currentUser!;
     tasksRef = FirebaseFirestore.instance
         .collection('users')
-        .doc(user!.uid)
+        .doc(user.uid)
         .collection('tasks');
   }
 
@@ -220,27 +250,4 @@ class _TaskListScreenState extends State<TaskListScreen> {
       ),
     );
   }
-}
-
-class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  Stream<User?> get userChanges => _auth.authStateChanges();
-
-  Future<void> signIn(String email, String password) async {
-    await _auth.signInWithEmailAndPassword(email: email, password: password);
-  }
-
-  Future<void> signOut() async {
-    await _auth.signOut();
-  }
-
-  Future<void> signUp(String email, String password) async {
-    await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-  }
-
-  User? get currentUser => _auth.currentUser;
 }
