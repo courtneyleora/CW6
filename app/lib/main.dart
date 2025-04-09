@@ -2,15 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart';
 
-// Your entry point
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
 
-// Root widget
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -26,7 +25,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// Auth-based navigation
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -38,7 +36,7 @@ class AuthGate extends StatelessWidget {
         if (!snapshot.hasData) {
           return LoginScreen(
             onLoginSuccess: () {
-              (context as Element).reassemble();
+              (context as Element).markNeedsBuild();
             },
           );
         } else {
@@ -49,7 +47,6 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-// Login/Register UI
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
   const LoginScreen({super.key, required this.onLoginSuccess});
@@ -71,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       widget.onLoginSuccess();
     } catch (e) {
-      setState(() => _error = "Login failed: ${e.toString()}");
+      setState(() => _error = "Login failed: \${e.toString()}");
     }
   }
 
@@ -83,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       widget.onLoginSuccess();
     } catch (e) {
-      setState(() => _error = "Registration failed: ${e.toString()}");
+      setState(() => _error = "Registration failed: \${e.toString()}");
     }
   }
 
@@ -120,7 +117,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// Task Manager Screen
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
 
@@ -129,7 +125,21 @@ class TaskListScreen extends StatefulWidget {
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
-  final TextEditingController _controller = TextEditingController();
+  final TextEditingController _subTaskNameController = TextEditingController();
+  final TextEditingController _timeRangeController = TextEditingController();
+  final TextEditingController _taskController = TextEditingController();
+  String _selectedDay = 'Monday';
+
+  final List<String> _daysOfWeek = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
   late final CollectionReference tasksRef;
 
   @override
@@ -149,7 +159,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
       'isCompleted': false,
       'timestamp': FieldValue.serverTimestamp(),
     });
-    _controller.clear();
+    _taskController.clear();
   }
 
   Future<void> _toggleComplete(String id, bool current) async {
@@ -158,6 +168,35 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   Future<void> _deleteTask(String id) async {
     await tasksRef.doc(id).delete();
+  }
+
+  Future<void> _addSubTask() async {
+    final user = FirebaseAuth.instance.currentUser!;
+    final subTaskName = _subTaskNameController.text.trim();
+    final timeRange = _timeRangeController.text.trim();
+    final selectedDay = _selectedDay;
+
+    if (subTaskName.isEmpty || timeRange.isEmpty) return;
+
+    final dayRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('days')
+        .doc(selectedDay);
+
+    await dayRef.set({'day': selectedDay});
+
+    final blockRef = dayRef.collection('timeBlocks').doc(timeRange);
+    await blockRef.set({'timeRange': timeRange});
+
+    await blockRef.collection('subTasks').add({
+      'name': subTaskName,
+      'isCompleted': false,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    _subTaskNameController.clear();
+    _timeRangeController.clear();
   }
 
   @override
@@ -179,20 +218,81 @@ class _TaskListScreenState extends State<TaskListScreen> {
         child: Column(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      labelText: "Enter task name",
-                      border: OutlineInputBorder(),
-                    ),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _taskController,
+                        decoration: const InputDecoration(
+                          labelText: "Enter task name",
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: () => _addTask(_taskController.text),
+                        child: const Text("Add Task"),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: () => _addTask(_controller.text),
-                  child: const Text("Add"),
+                Expanded(
+                  child: Card(
+                    elevation: 4,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Add Nested Sub-Task",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            value: _selectedDay,
+                            items:
+                                _daysOfWeek.map((day) {
+                                  return DropdownMenuItem(
+                                    value: day,
+                                    child: Text(day),
+                                  );
+                                }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedDay = val);
+                              }
+                            },
+                            decoration: const InputDecoration(labelText: "Day"),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _timeRangeController,
+                            decoration: const InputDecoration(
+                              labelText: "Time Range (e.g. 9am–10am)",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _subTaskNameController,
+                            decoration: const InputDecoration(
+                              labelText: "Sub-Task Name",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton(
+                            onPressed: _addSubTask,
+                            child: const Text("Add Sub-Task"),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

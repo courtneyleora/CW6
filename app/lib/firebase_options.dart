@@ -66,4 +66,5 @@ class DefaultFirebaseOptions {
     projectId: 'taskmanager-e6625',
     storageBucket: 'taskmanager-e6625.firebasestorage.app',
   );
+
 }
