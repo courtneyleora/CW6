@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,11 +35,7 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return LoginScreen(
-            onLoginSuccess: () {
-              (context as Element).markNeedsBuild();
-            },
-          );
+          return const LoginScreen();
         } else {
           return const TaskListScreen();
         }
@@ -48,8 +45,7 @@ class AuthGate extends StatelessWidget {
 }
 
 class LoginScreen extends StatefulWidget {
-  final VoidCallback onLoginSuccess;
-  const LoginScreen({super.key, required this.onLoginSuccess});
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -66,7 +62,6 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _email.text.trim(),
         password: _password.text.trim(),
       );
-      widget.onLoginSuccess();
     } catch (e) {
       setState(() => _error = "Login failed: \${e.toString()}");
     }
@@ -78,7 +73,6 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _email.text.trim(),
         password: _password.text.trim(),
       );
-      widget.onLoginSuccess();
     } catch (e) {
       setState(() => _error = "Registration failed: \${e.toString()}");
     }
@@ -141,6 +135,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   ];
 
   late final CollectionReference tasksRef;
+  String? _fcmToken;
 
   @override
   void initState() {
@@ -150,6 +145,22 @@ class _TaskListScreenState extends State<TaskListScreen> {
         .collection('users')
         .doc(user.uid)
         .collection('tasks');
+    _initFCM();
+  }
+
+  Future<void> _initFCM() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.requestPermission();
+
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      String? token = await messaging.getToken();
+      print("\u{1F525} FCM Token: \$token");
+      setState(() {
+        _fcmToken = token;
+      });
+    } else {
+      print("\u274C User declined or has not accepted permission");
+    }
   }
 
   Future<void> _addTask(String taskName) async {
@@ -185,7 +196,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
         .doc(selectedDay);
 
     await dayRef.set({'day': selectedDay});
-
     final blockRef = dayRef.collection('timeBlocks').doc(timeRange);
     await blockRef.set({'timeRange': timeRange});
 
@@ -262,9 +272,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                   );
                                 }).toList(),
                             onChanged: (val) {
-                              if (val != null) {
+                              if (val != null)
                                 setState(() => _selectedDay = val);
-                              }
                             },
                             decoration: const InputDecoration(labelText: "Day"),
                           ),
@@ -297,6 +306,14 @@ class _TaskListScreenState extends State<TaskListScreen> {
               ],
             ),
             const SizedBox(height: 20),
+            if (_fcmToken != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  "FCM Token:\n\$_fcmToken",
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: tasksRef.orderBy('timestamp').snapshots(),
